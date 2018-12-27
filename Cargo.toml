@@ -1,0 +1,9 @@
+[package]
+name = "kinoko"
+version = "0.0.1"
+authors = ["william <william.hng@outlook.com>"]
+edition = "2018"
+
+[dependencies]
+toml = "0"
+# futures-preview = "0.3.0-alpha.10"
