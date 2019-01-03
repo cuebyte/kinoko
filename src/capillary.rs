@@ -1,76 +1,90 @@
-use std::fs::File;
-use std::fs::OpenOptions;
-use std::io::BufReader;
-use std::path::Path;
-use std::{thread, time};
+use futures::executor::{self, ThreadPool};
+use futures::future::Future;
+use futures::stream::Stream;
+use notify::{self, raw_watcher, RawEvent, RecursiveMode, Watcher};
+use std::io::{Error, ErrorKind, Result};
+use std::pin::Pin;
+use std::sync::mpsc::{self, TryRecvError};
+use std::task::{LocalWaker, Poll};
 
-use notify::{watcher, RecursiveMode, Watcher};
-use std::sync::mpsc;
-use std::time::Duration;
-
-pub struct Capillary {}
-
-impl Capillary {
-    pub fn new() -> Self {
-        Capillary {}
-    }
-
-    pub fn crawl(path: &str) {
-        // Create a channel to receive the events.
-        let (tx, rx) = mpsc::channel();
-
-        // Create a watcher object, delivering debounced events.
-        // The notification back-end is selected based on the platform.
-        // let mut watcher = watcher(tx, Duration::from_millis(200)).unwrap();
-        let mut watcher = watcher(tx, Duration::from_millis(200)).unwrap();
-
-        // Add a path to be watched. All files and directories at that path and
-        // below will be monitored for changes.
-        watcher.watch(path, RecursiveMode::Recursive).unwrap();
-        loop {
-            println!("!!!!");
-            match rx.recv() {
-                Ok(event) => println!("{:?}", event),
-                Err(e) => println!("watch error: {:?}", e),
-            }
-        }
-
-        // let mut f = OpenOptions::new().read(true).open(path).unwrap();
-        // let mut x = 0;
-        // loop {
-        //     thread::sleep(time::Duration::from_millis(2));
-        //     let xx = f.metadata().unwrap().len();
-        //     if x != xx {
-        //         x = xx;
-        //         println!("!{}", x);
-        //     }
-        // }
-    }
+pub struct RawEventsFuture {
+    tx: mpsc::Sender<RawEvent>,
+    rx: mpsc::Receiver<RawEvent>,
+    watcher: notify::fsevent::FsEventWatcher,
 }
 
+impl RawEventsFuture {
+    pub fn new(paths: &[&str]) -> Self {
+        let (tx, rx) = mpsc::channel();
+        let mut watcher = raw_watcher(tx.clone()).unwrap();
+        for path in paths {
+            println!("{}", path);
+            watcher.watch(path, RecursiveMode::NonRecursive).unwrap();
+        }
+        RawEventsFuture { tx, rx, watcher }
+    }
+
+    // pub fn run(&mut self, ) {
+    //     for path in paths {
+    //         self.watcher.watch(path, RecursiveMode::NonRecursive).unwrap();
+    //     }
+    // }
+}
+
+impl Stream for RawEventsFuture {
+    type Item = RawEvent;
+    fn poll_next(self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Option<Self::Item>> {
+        lw.wake();
+        match self.rx.try_recv() {
+            Ok(event) => {
+                Poll::Ready(Some(event))
+            }
+            Err(err) => match err {
+                TryRecvError::Empty => {
+                    Poll::Pending
+                }
+                TryRecvError::Disconnected => {
+                    Poll::Ready(None)
+                }
+            },
+        }
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::{Command};
+    use futures::executor::{self, ThreadPool};
+    use futures::prelude::StreamExt;
+    use std::process::Command;
     use std::thread;
 
     #[test]
-
     fn write_lines() {
         let path = "/Users/william/w/kinoko/crawler.log";
-
         thread::spawn(move || {
-            Capillary::crawl(path);
+            for _ in 0..10 {
+                thread::sleep(std::time::Duration::from_millis(100));
+                Command::new("sh")
+                    .arg("-c")
+                    .arg("echo 0 >> /Users/william/w/kinoko/crawler.log")
+                    .spawn()
+                    .unwrap();
+            }
         });
-        for _ in 0..10 {
-            thread::sleep(Duration::from_millis(200));
-            Command::new("sh")
-                .arg("-c")
-                .arg("echo 0 >> /Users/william/w/kinoko/crawler.log")
-                .spawn()
-                .unwrap();
-        }
-
+        thread::spawn(move || {
+            executor::block_on(
+                async {
+                    let mut stream = RawEventsFuture::new(&[&path]);
+                    loop {
+                        match await!(stream.next()) {
+                            Some(event) => println!("{:?}", event),
+                            None => println!("..."),
+                        }
+                    }
+                },
+            );
+        });
+        thread::sleep(std::time::Duration::from_secs(4));
         // for _ in 0..10 {
         //     f.write_all(b"abc\n").unwrap();
         //     thread::sleep(Duration::from_millis(1000));
