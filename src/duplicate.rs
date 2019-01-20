@@ -2,9 +2,9 @@ use std::fs::File;
 use std::io::{Error, ErrorKind, Read, Result, Seek, SeekFrom};
 
 pub struct Duplicator {
-    path: String,
-    file: File,
-    offset: u64,
+    pub path: String,
+    pub file: File,
+    pub offset: u64,
 }
 
 impl Duplicator {
@@ -34,8 +34,20 @@ impl Duplicator {
 }
 
 pub struct Fragment {
-    path: String,
-    content: String,
-    start_offset: u64,
-    end_offset: u64,
+    pub path: String,
+    pub content: String,
+    pub start_offset: u64,
+    pub end_offset: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs::File;
+    use std::io::{Error, ErrorKind, Read, Result, Seek, SeekFrom, Write};
+    #[test]
+    fn tt() -> Result<()> {
+        let mut file = File::create("foo.txt")?;
+        file.write_all(b"Hello, world!")?;
+        unimplemented!()
+    }
 }
