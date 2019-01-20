@@ -7,4 +7,4 @@ edition = "2018"
 [dependencies]
 toml = "0"
 notify = "4"
-futures-preview = "0.3.0-alpha.11"
+futures-preview = "0.3.0-alpha.12"

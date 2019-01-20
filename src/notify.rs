@@ -1,22 +1,26 @@
 use futures::stream::Stream;
 use notify::{self, raw_watcher, RawEvent, RecursiveMode, Watcher};
 use std::pin::Pin;
-use std::sync::mpsc::{self, TryRecvError};
+use std::sync::mpsc::{self as sync_mpsc, TryRecvError};
 use std::task::{LocalWaker, Poll};
+use std::io::{Result, Error, ErrorKind};
+
 
 pub struct RawEventsFuture {
-    rx: mpsc::Receiver<RawEvent>,
+    rx: sync_mpsc::Receiver<RawEvent>,
     _watcher: notify::fsevent::FsEventWatcher,
 }
 
 impl RawEventsFuture {
-    pub fn new(paths: &[&str]) -> Self {
-        let (tx, rx) = mpsc::channel();
+    pub fn new(paths: &[&str]) -> Result<Self> {
+        let (tx, rx) = sync_mpsc::channel();
         let mut _watcher = raw_watcher(tx).unwrap();
         for path in paths {
-            _watcher.watch(path, RecursiveMode::NonRecursive).unwrap();
+            if let Err(e) = _watcher.watch(path, RecursiveMode::NonRecursive) {
+                return Err(Error::new(ErrorKind::NotFound, e))
+            }
         }
-        RawEventsFuture { rx, _watcher }
+        Ok(RawEventsFuture { rx, _watcher })
     }
 }
 
@@ -43,26 +47,31 @@ mod tests {
 
     #[test]
     fn write_lines() {
-        let path = "/Users/william/w/kinoko/crawler.log";
+        let path = "./crawler.log";
+        std::fs::File::create(path).unwrap();
         thread::spawn(move || {
-            executor::block_on(async {
-                let mut stream = RawEventsFuture::new(&[&path]);
-                loop {
-                    match await!(stream.next()) {
-                        Some(event) => println!("{:?}", event),
-                        None => println!("..."),
+            executor::block_on(
+                async {
+                    let mut stream = RawEventsFuture::new(&[&path]).unwrap();
+                    loop {
+                        match await!(stream.next()) {
+                            Some(event) => println!("{:?}", event),
+                            None => println!("..."),
+                        }
                     }
-                }
-            });
+                },
+            );
         });
 
         for _ in 0..10 {
             thread::sleep(std::time::Duration::from_millis(100));
             Command::new("sh")
                 .arg("-c")
-                .arg("echo 0 >> /Users/william/w/kinoko/crawler.log")
+                .arg(format!("echo 0 >> {}", path))
                 .spawn()
                 .unwrap();
         }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::fs::remove_file(path).unwrap();
     }
 }
