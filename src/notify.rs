@@ -47,7 +47,7 @@ mod tests {
 
     #[test]
     fn write_lines() {
-        let path = "./crawler.log";
+        let path = "crawler.log";
         std::fs::File::create(path).unwrap();
         thread::spawn(move || {
             executor::block_on(
