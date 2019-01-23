@@ -1,6 +1,5 @@
 use std::fs::File;
-use std::io::{Error, ErrorKind, Read, Result, Seek, SeekFrom};
-
+use std::io::{Read, Result, Seek, SeekFrom};
 pub struct Duplicator {
     pub path: String,
     pub file: File,
@@ -33,6 +32,7 @@ impl Duplicator {
     }
 }
 
+#[derive(Debug)]
 pub struct Fragment {
     pub path: String,
     pub content: String,
@@ -42,12 +42,24 @@ pub struct Fragment {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use std::fs::File;
-    use std::io::{Error, ErrorKind, Read, Result, Seek, SeekFrom, Write};
+    use std::io::Write;
     #[test]
     fn tt() -> Result<()> {
-        let mut file = File::create("foo.txt")?;
-        file.write_all(b"Hello, world!")?;
-        unimplemented!()
+        let path = "foo.bar";
+        let mut file = File::create(path)?;
+        let mut d = Duplicator::new(path)?;
+
+        for _ in 0..5 {
+            for j in 0..10 {
+                file.write_all(format!("{}\n", j).as_bytes())?;
+            }
+            assert_eq!("0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n", d.duplicate()?.content);
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        std::fs::remove_file(path).unwrap();
+        Ok(())
     }
 }
