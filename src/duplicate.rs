@@ -1,4 +1,4 @@
-use memmap::{MmapOptions};
+use memmap::MmapOptions;
 use std::fs::File;
 use std::io::{Read, Result, Seek, SeekFrom};
 
@@ -19,8 +19,10 @@ impl Duplicator {
 
     pub fn duplicate(&mut self) -> Result<DuplicateResult> {
         let file_len = self.file.metadata()?.len();
+        dbg!(file_len);
+        dbg!(self.offset);
         let content_len = file_len - self.offset;
-        if content_len <= MMAP_THRESHOLD {
+        if content_len < MMAP_THRESHOLD {
             self.file_dup(file_len)
         } else {
             self.mmap_dup(file_len, content_len)
@@ -40,7 +42,7 @@ impl Duplicator {
         let buf = String::from_utf8_lossy(mmap.as_ref()).into_owned();
 
         let old_offset = self.offset;
-        self.offset = old_offset + FRAGMENT_LENGTH_MAXIMUM;
+        self.offset = old_offset + content_len;
         Ok(DuplicateResult::new(
             state,
             Fragment {
@@ -71,7 +73,7 @@ impl Duplicator {
         ))
     }
 }
-
+#[derive(Debug, Clone)]
 pub struct DuplicateResult {
     state: DuplicateState,
     fragment: Fragment,
@@ -83,6 +85,7 @@ impl DuplicateResult {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum DuplicateState {
     OnGoing,
     Done,
@@ -105,7 +108,7 @@ mod tests {
     use std::io::Write;
 
     #[test]
-    fn base_file_dup() -> Result<()> {
+    fn test_file_dup() -> Result<()> {
         let path = "foo.bar";
         let mut file = File::create(path)?;
         let mut d = Duplicator::new(path)?;
@@ -114,11 +117,53 @@ mod tests {
             for j in 0..10 {
                 file.write_all(format!("{}\n", j).as_bytes())?;
             }
-            assert_eq!("0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n", d.duplicate()?.fragment.content);
+            assert_eq!(
+                "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n",
+                d.duplicate()?.fragment.content
+            );
         }
 
+        cleanup(path)
+    }
+
+    #[test]
+    fn test_mmap_dup_done() -> Result<()> {
+        let path = "foo.bar.0";
+        let mut file = File::create(path)?;
+        let mut d = Duplicator::new(path)?;
+
+        for _ in 0..3 {
+            let buf = vec![65; MMAP_THRESHOLD as usize + 1];
+            file.write_all(&buf)?;
+            assert_eq!(
+                buf,
+                d.duplicate()?.fragment.content.as_bytes()
+            );
+        }
+        cleanup(path)
+    }
+
+    #[test]
+    #[ignore]
+    fn test_mmap_dup_ongoing() -> Result<()> {
+        let path = "foo.bar.0";
+        let mut file = File::create(path)?;
+        let mut d = Duplicator::new(path)?;
+
+        for _ in 0..3 {
+            let buf = vec![65; (FRAGMENT_LENGTH_MAXIMUM + MMAP_THRESHOLD) as usize];
+            file.write_all(&buf)?;
+            assert_eq!(
+                buf,
+                d.duplicate()?.fragment.content.as_bytes()
+            );
+        }
+        cleanup(path)
+    }
+
+    fn cleanup(path: &str) -> Result<()> {
         std::thread::sleep(std::time::Duration::from_millis(100));
-        std::fs::remove_file(path).unwrap();
+        std::fs::remove_file(path)?;
         Ok(())
     }
 }
