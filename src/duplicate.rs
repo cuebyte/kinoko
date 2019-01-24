@@ -17,7 +17,7 @@ impl Duplicator {
         })
     }
 
-    pub fn duplicate(&mut self) -> Result<DuplicateResult> {
+    pub fn duplicate(&mut self) -> Result<DuplicateState> {
         let file_len = self.file.metadata()?.len();
         dbg!(file_len);
         dbg!(self.offset);
@@ -29,11 +29,11 @@ impl Duplicator {
         }
     }
 
-    fn mmap_dup(&mut self, file_len: u64, content_len: u64) -> Result<DuplicateResult> {
-        let (state, content_len) = if content_len < FRAGMENT_LENGTH_MAXIMUM {
-            (DuplicateState::Done, content_len)
+    fn mmap_dup(&mut self, file_len: u64, content_len: u64) -> Result<DuplicateState> {
+        let (is_done, content_len) = if content_len < FRAGMENT_LENGTH_MAXIMUM {
+            (true, content_len)
         } else {
-            (DuplicateState::OnGoing, FRAGMENT_LENGTH_MAXIMUM)
+            (false, FRAGMENT_LENGTH_MAXIMUM)
         };
 
         let mut mmap_option = MmapOptions::new();
@@ -43,52 +43,41 @@ impl Duplicator {
 
         let old_offset = self.offset;
         self.offset = old_offset + content_len;
-        Ok(DuplicateResult::new(
-            state,
-            Fragment {
-                path: self.path.clone(),
-                content: buf,
-                start_offset: old_offset,
-                end_offset: self.offset,
-            },
-        ))
+        let fragment = Fragment {
+            path: self.path.clone(),
+            content: buf,
+            start_offset: old_offset,
+            end_offset: self.offset,
+        };
+        let state = if is_done {
+            DuplicateState::Done(fragment)
+        } else {
+            DuplicateState::OnGoing(fragment)
+        };
+        Ok(state)
     }
 
     // in case the length < 4kb
-    fn file_dup(&mut self, file_len: u64) -> Result<DuplicateResult> {
+    fn file_dup(&mut self, file_len: u64) -> Result<DuplicateState> {
         self.file.seek(SeekFrom::Start(self.offset))?;
         let mut buf = String::with_capacity((file_len - self.offset) as usize);
         self.file.read_to_string(&mut buf)?;
 
         let old_offset = self.offset;
         self.offset = file_len;
-        Ok(DuplicateResult::new(
-            DuplicateState::Done,
-            Fragment {
-                path: self.path.clone(),
-                content: buf,
-                start_offset: old_offset,
-                end_offset: self.offset,
-            },
-        ))
-    }
-}
-#[derive(Debug, Clone)]
-pub struct DuplicateResult {
-    state: DuplicateState,
-    fragment: Fragment,
-}
-
-impl DuplicateResult {
-    fn new(state: DuplicateState, fragment: Fragment) -> Self {
-        DuplicateResult { state, fragment }
+        Ok(DuplicateState::Done(Fragment {
+            path: self.path.clone(),
+            content: buf,
+            start_offset: old_offset,
+            end_offset: self.offset,
+        }))
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum DuplicateState {
-    OnGoing,
-    Done,
+    OnGoing(Fragment),
+    Done(Fragment),
 }
 
 #[derive(Debug, Clone)]
@@ -99,8 +88,11 @@ pub struct Fragment {
     pub end_offset: u64,
 }
 
-const MMAP_THRESHOLD: u64 = 4096; // 4kb, the linux page size
-const FRAGMENT_LENGTH_MAXIMUM: u64 = 100 * 0x100000; // 100mb, the default max content of an HTTP request in elastic
+// 4kb, the linux page size
+const MMAP_THRESHOLD: u64 = 4096;
+
+// 100mb, the default max content of an HTTP request in elastic
+const FRAGMENT_LENGTH_MAXIMUM: u64 = 100 * 0x100000;
 
 #[cfg(test)]
 mod tests {
@@ -117,12 +109,12 @@ mod tests {
             for j in 0..10 {
                 file.write_all(format!("{}\n", j).as_bytes())?;
             }
-            assert_eq!(
-                "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n",
-                d.duplicate()?.fragment.content
-            );
+            if let DuplicateState::Done(f) = d.duplicate()? {
+                assert_eq!("0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n", f.content);
+            } else {
+                assert!(false);
+            }
         }
-
         cleanup(path)
     }
 
@@ -133,12 +125,13 @@ mod tests {
         let mut d = Duplicator::new(path)?;
 
         for _ in 0..3 {
-            let buf = vec![65; MMAP_THRESHOLD as usize + 1];
+            let buf = vec![b'z'; MMAP_THRESHOLD as usize + 1];
             file.write_all(&buf)?;
-            assert_eq!(
-                buf,
-                d.duplicate()?.fragment.content.as_bytes()
-            );
+            if let DuplicateState::Done(f) = d.duplicate()? {
+                assert_eq!(buf, f.content.as_bytes());
+            } else {
+                assert!(false);
+            }
         }
         cleanup(path)
     }
@@ -146,17 +139,18 @@ mod tests {
     #[test]
     #[ignore]
     fn test_mmap_dup_ongoing() -> Result<()> {
-        let path = "foo.bar.0";
+        let path = "foo.bar.1";
         let mut file = File::create(path)?;
         let mut d = Duplicator::new(path)?;
 
         for _ in 0..3 {
-            let buf = vec![65; (FRAGMENT_LENGTH_MAXIMUM + MMAP_THRESHOLD) as usize];
+            let buf = vec![b'z'; (FRAGMENT_LENGTH_MAXIMUM + MMAP_THRESHOLD) as usize];
             file.write_all(&buf)?;
-            assert_eq!(
-                buf,
-                d.duplicate()?.fragment.content.as_bytes()
-            );
+            if let DuplicateState::Done(f) = d.duplicate()? {
+                assert_eq!(buf, f.content.as_bytes());
+            } else {
+                assert!(false);
+            }
         }
         cleanup(path)
     }
