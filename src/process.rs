@@ -20,19 +20,21 @@ impl Parser {
         }
     }
     pub fn parse(&self, input: &str) -> Vec<HashMap<String, String>> {
-        let names = self.re.capture_names()
-            .filter_map(|x| x.to_owned())
-            .collect::<Vec<_>>();
         let mut result: Vec<HashMap<String, String>> = Vec::new();
+        let names = self.re.capture_names()
+            .filter_map(|x| x)
+            .collect::<Vec<_>>();
 
         for caps in self.re.captures_iter(input) {
             let mut map: HashMap<String, String> = HashMap::new();
             for name in names.clone() {
-                if let Some(m) = caps.name(&name) {
+                if let Some(m) = caps.name(name) {
                     map.insert(name.to_owned(), m.as_str().to_owned());
                 }
             }
-            result.push(map);
+            if map.len() > 0 {
+                result.push(map);
+            }
         }
         result
     }
