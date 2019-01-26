@@ -156,8 +156,7 @@ mod tests {
     }
 
     fn cleanup(path: &str) -> Result<()> {
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        std::fs::remove_file(path)?;
+        std::process::Command::new("rm").arg(path).output()?;
         Ok(())
     }
 }

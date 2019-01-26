@@ -1,4 +1,5 @@
 /target
 **/*.rs.bk
 crawler.log
-foo.bar
+foo.bar*
+.idea

@@ -8,7 +8,7 @@ use std::io::{Result, Error, ErrorKind};
 
 pub struct RawEventsFuture {
     rx: sync_mpsc::Receiver<RawEvent>,
-    _watcher: notify::fsevent::FsEventWatcher,
+    _watcher: notify::inotify::INotifyWatcher,
 }
 
 impl RawEventsFuture {
