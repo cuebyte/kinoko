@@ -1,13 +1,5 @@
 use regex::Regex;
-use regex::Captures;
-use std::result::Result;
 use std::collections::HashMap;
-use serde::Serialize;
-use serde::Serializer;
-///    log String
-/// -> regex::Capture
-/// -> hashmap
-/// -> serde_json.to_string
 
 pub struct Parser {
     re: Regex,
@@ -19,6 +11,7 @@ impl Parser {
             re: Regex::new(re).unwrap()
         }
     }
+
     pub fn parse(&self, input: &str) -> Vec<HashMap<String, String>> {
         let mut result: Vec<HashMap<String, String>> = Vec::new();
         let names = self.re.capture_names()
@@ -45,12 +38,11 @@ mod tests {
 
     #[test]
     fn regex_fn() {
-        Regex::new(r"^\d{4}-\d{2}-\d{2}$").unwrap();
-        let re = Regex::new(r"(?P<y>\d{4})-(?P<m>\d{2})-(?P<d>\d{2})").unwrap();
-        let before = "2012-03-14, 2013-01-01 and 2014-07-05";
-        let cap = re.captures(before).unwrap();
-        dbg!(&cap);
-        println!("{:?}", serde_json::to_string(&cap["y"]));
-        assert!(false);
+        let parser = Parser::new(r"(?P<y>\d{4})-(?P<m>\d{2})-(?P<d>\d{2})");
+        let data = parser.parse("2012-03-14, 2013-01-01 and 2014-07-05");
+        assert_eq!(3, data.len());
+        for map in data {
+            assert_eq!(3, map.len());
+        }
     }
 }
