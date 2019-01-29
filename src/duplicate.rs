@@ -156,7 +156,6 @@ mod tests {
     }
 
     fn cleanup(path: &str) -> Result<()> {
-        // std::process::Command::new("rm").arg(path).output()?;
         std::fs::remove_file(path)?;
         Ok(())
     }
