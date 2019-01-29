@@ -8,7 +8,7 @@ use std::io::{Result, Error, ErrorKind};
 
 pub struct RawEventsFuture {
     rx: sync_mpsc::Receiver<RawEvent>,
-    _watcher: notify::inotify::INotifyWatcher,
+    _watcher: LocalWatcher,
 }
 
 impl RawEventsFuture {
@@ -24,6 +24,7 @@ impl RawEventsFuture {
     }
 }
 
+
 impl Stream for RawEventsFuture {
     type Item = RawEvent;
     fn poll_next(self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Option<Self::Item>> {
@@ -37,6 +38,20 @@ impl Stream for RawEventsFuture {
         }
     }
 }
+
+/// The local `Watcher` implementation for the current platform
+#[cfg(target_os = "linux")]
+type LocalWatcher = notify::inotify::INotifyWatcher;
+/// The local `Watcher` implementation for the current platform
+#[cfg(target_os = "macos")]
+type LocalWatcher = notify::fsevent::FsEventWatcher;
+/// The local `Watcher` implementation for the current platform
+#[cfg(target_os = "windows")]
+type LocalWatcher = notify::windows::ReadDirectoryChangesWatcher;
+/// The recommended `Watcher` implementation for the current platform
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+type LocalWatcher = notify::poll::PollWatcher;
+
 #[cfg(test)]
 mod tests {
     use super::*;
